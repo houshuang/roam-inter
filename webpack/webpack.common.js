@@ -27,7 +27,10 @@ module.exports = {
     })
   ],
   resolve: {
-    fallback: { stream: require.resolve("stream-browserify") },
+    fallback: {
+      stream: require.resolve("stream-browserify"),
+      util: require.resolve("util/")
+    },
     alias: {
       "~": Path.resolve(__dirname, "../src")
     }

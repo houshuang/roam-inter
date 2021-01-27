@@ -60,6 +60,7 @@
     "core-js": "^3.8.1",
     "roam-client": "^1.30.5",
     "sharedb": "^1.6.0",
-    "stream-browserify": "^3.0.0"
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.3"
   }
 }
