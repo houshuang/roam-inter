@@ -1,6 +1,7 @@
 import RoamClient from "roam-client";
 import json0 from "ot-json0";
 import ShareDBClient from "sharedb/lib/client";
+import ReconnectingWebsocket from "reconnecting-websocket";
 
 ShareDBClient.types.register(json0.type);
 ShareDBClient.types.defaultType = json0.type;
