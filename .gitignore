@@ -13,3 +13,6 @@ yarn.lock
 .yarnclean
 .vscode
 .idea
+
+# Local Netlify folder
+.netlify
