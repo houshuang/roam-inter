@@ -2,6 +2,7 @@ import json0 from "@minervaproject/ot-json0";
 import ShareDBClient from "@chilifrog/sharedb/lib/client";
 import ReconnectingWebSocket from "reconnecting-websocket";
 import { btree } from "./zettel";
+import cuid from "cuid";
 
 const setup = () => {
   ShareDBClient.types.register(json0.type);
@@ -45,8 +46,9 @@ const blocksToMarkdown = (blocks, indent = 0) => {
 
 // takes a block uid and returns a tree of blocks, sorted
 const getBlockWithChildren = uid => {
+  uid = uid.replace("((", "").replace("))", "");
   const blocks = roamAlphaAPI.q(
-    `[ :find (pull ?e [ :node/title :block/string :block/children :block/order {:block/children ...} ]) :where [?e :block/uid "${uid}"]]`
+    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/children :block/order {:block/children ...} ]) :where [?e :block/uid "${uid}"]]`
   );
   return sortBlockTree(blocks[0]);
 };
@@ -54,9 +56,29 @@ const getBlockWithChildren = uid => {
 // takes a title string and returns a tree of blocks, sorted
 const getPageWithChildren = title => {
   const blocks = roamAlphaAPI.q(
-    `[ :find (pull ?e [ :node/title :block/string :block/children :block/order {:block/children ...} ]) :where [?e :node/title "${title}"]]`
+    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/children :block/order {:block/children ...} ]) :where [?e :node/title "${title}"]]`
   );
   return sortBlockTree(blocks[0]);
+};
+
+const insertBlockTreeAsChild = (btree, parentUid, order) => {
+  parentUid = parentUid.replace("((", "").replace("))", "");
+  if (!btree || btree.length === 0) {
+    return;
+  }
+  btree.forEach((node, i) => {
+    const nodeId = cuid();
+    const str = node.title || node.string;
+    if (!str) {
+      console.warn(node);
+    } else {
+      roamAlphaAPI.createBlock({
+        location: { "parent-uid": parentUid, order: i + order },
+        block: { string: node.string || node.title, uid: nodeId }
+      });
+    }
+    insertBlockTreeAsChild(node.children, nodeId, 0);
+  });
 };
 
 // setup();
@@ -69,3 +91,4 @@ global.inter = {};
 global.inter.blocksToMarkdown = blocksToMarkdown;
 global.inter.getPageWithChildren = getPageWithChildren;
 global.inter.getBlockWithChildren = getBlockWithChildren;
+global.inter.insertBlockTreeAsChild = insertBlockTreeAsChild;
