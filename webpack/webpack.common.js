@@ -12,12 +12,6 @@ module.exports = {
     path: Path.join(__dirname, "../build"),
     filename: "js/[name].js"
   },
-  optimization: {
-    splitChunks: {
-      chunks: "all",
-      name: false
-    }
-  },
   plugins: [
     new CleanWebpackPlugin(),
     new CopyWebpackPlugin({
