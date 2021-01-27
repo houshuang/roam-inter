@@ -58,6 +58,7 @@
   "dependencies": {
     "@babel/polyfill": "^7.12.1",
     "core-js": "^3.8.1",
-    "roam-client": "^1.30.5"
+    "roam-client": "^1.30.5",
+    "sharedb": "^1.6.0"
   }
 }
