@@ -56,11 +56,13 @@
     "webpack-merge": "^5.4.0"
   },
   "dependencies": {
+    "@babel/node": "^7.12.10",
     "@babel/polyfill": "^7.12.1",
     "@chilifrog/sharedb": "^3.0.1",
     "@minervaproject/ot-json0": "^1.4.2",
     "core-js": "^3.8.1",
     "cuid": "^2.1.8",
+    "lodash": "^4.17.20",
     "node-polyfill-webpack-plugin": "^1.0.2",
     "reconnecting-websocket": "^4.4.0",
     "roam-client": "^1.30.5",

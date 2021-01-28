@@ -1,7 +1,8 @@
 import json0 from "@minervaproject/ot-json0";
 import ShareDBClient from "@chilifrog/sharedb/lib/client";
 import ReconnectingWebSocket from "reconnecting-websocket";
-import { btree } from "./zettel";
+import { btree, btreeBlock, btreeBlock2 } from "./zettel";
+import { btreeDiff } from "./btreeDiff";
 import cuid from "cuid";
 
 const setup = () => {
@@ -48,7 +49,7 @@ const blocksToMarkdown = (blocks, indent = 0) => {
 const getBlockWithChildren = uid => {
   uid = uid.replace("((", "").replace("))", "");
   const blocks = roamAlphaAPI.q(
-    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/children :block/order {:block/children ...} ]) :where [?e :block/uid "${uid}"]]`
+    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/parent-uid :block/children :block/order :block/time {:block/children ...} ]) :where [?e :block/uid "${uid}"]]`
   );
   return sortBlockTree(blocks[0]);
 };
@@ -56,7 +57,7 @@ const getBlockWithChildren = uid => {
 // takes a title string and returns a tree of blocks, sorted
 const getPageWithChildren = title => {
   const blocks = roamAlphaAPI.q(
-    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/children :block/order {:block/children ...} ]) :where [?e :node/title "${title}"]]`
+    `[ :find (pull ?e [ :node/title :block/string :block/uid :block/children :block/order :block/time {:block/children ...} ]) :where [?e :node/title "${title}"]]`
   );
   return sortBlockTree(blocks[0]);
 };
