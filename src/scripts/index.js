@@ -21,5 +21,6 @@ global.inter.btreeDiff = btreeDiff;
 global.inter.btreeToBArray = btreeToBArray;
 global.inter.bArrayToBtree = bArrayToBtree;
 
-// new Promise(() => setupSharedb());
-setupInterval();
+setupSharedb(() => {
+  setupInterval();
+});

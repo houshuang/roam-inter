@@ -1,18 +1,36 @@
 import ShareDBClient from "@chilifrog/sharedb/lib/client";
-import ReconnectingWebSocket from "reconnecting-websocket";
+import WebSocket from "reconnecting-websocket";
 import json0 from "@minervaproject/ot-json0";
 
-export const setupSharedb = () => {
+export const setupSharedb = callback => {
   console.log("Setting up sharedb");
   ShareDBClient.types.register(json0.type);
   ShareDBClient.types.defaultType = json0.type;
 
   const shareDbUrl = "wss://icchilisrv3.epfl.ch/sharedb?null";
 
-  if (!window.inter.socket) {
-    window.inter.socket = new ReconnectingWebSocket(shareDbUrl, null, {
-      minConnectionDelay: 1
-    });
-    window.inter.connection = new ShareDBClient.Connection(window.inter.socket);
+  const socket = new WebSocket(shareDbUrl);
+  const connection = new ShareDBClient.Connection(socket);
+  window.inter.sharedbDoc = connection.get("rz", "roam-inter");
+  console.log(inter.sharedbDoc);
+  window.inter.sharedbDoc.subscribe();
+  window.inter.sharedbDoc.once("load", () => {
+    if (!window.inter.sharedbDoc.type) {
+      console.log("initiating doc");
+      window.inter.sharedbDoc.create({ changes: [] });
+    }
+    console.log("ready, callback");
+    callback();
+  });
+};
+
+export const pushChange = change => {
+  if (!change || !change.type) {
+    return;
   }
+  console.log(change);
+  window.inter.sharedbDoc.submitOp({
+    p: ["changes", 99999],
+    li: change
+  });
 };

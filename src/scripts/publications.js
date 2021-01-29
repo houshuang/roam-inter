@@ -1,5 +1,6 @@
 import { getBlockWithChildren, insertBlockTreeAsChild } from "./blockHelpers";
 import { simpleCompare } from "./btreeDiff";
+import { pushChange } from "./sharedb";
 
 const blockRegexp = new RegExp("\\(\\((.+?)\\)\\)", "g");
 const replaceBlockRef = (string, target) =>
@@ -22,7 +23,7 @@ const getInterAttribute = attr => {
 
 const actOnChanges = (subname, block, changes, topParent) => {
   (changes.newBlocks || []).forEach(f => {
-    window.inter.changes.push({
+    pushChange({
       subname,
       type: "create",
       block: {
@@ -33,7 +34,7 @@ const actOnChanges = (subname, block, changes, topParent) => {
     });
   });
   (changes.updatedBlocks || []).forEach(f => {
-    window.inter.changes.push({ subname, type: "update", block: f });
+    pushChange({ subname, type: "update", block: f });
   });
 };
 
@@ -51,7 +52,7 @@ const checkPub = pub => {
     }
   } else {
     if (block) {
-      window.inter.changes.push({
+      pushChange({
         subname: pub,
         type: "instantiate",
         blockWithChildren: block
@@ -99,9 +100,9 @@ const applyChange = (target, change) => {
 const checkSub = subuid => {
   const sub = window.inter.subs[subuid];
   if (!sub || !sub.index) {
-    console.warn("no sub/sub.index", sub);
+    // console.warn("no sub/sub.index", sub);
   }
-  const { changes } = window.inter;
+  const changes = window.inter.sharedbDoc.data.changes;
   if (changes.length === sub.index) {
     return;
   }
@@ -130,7 +131,7 @@ const checkPublications = () => {
   }
   newSubs.forEach(f => {
     window.inter.subs[f[1]] = {
-      interval: setInterval(() => checkSub(f[1]), 200),
+      interval: setInterval(() => checkSub(f[1]), 500),
       uid: f[1],
       index: 0,
       subname: f[0]
@@ -139,7 +140,7 @@ const checkPublications = () => {
   });
   newPubs.forEach(f => {
     window.inter.pubs[f[0]] = {
-      interval: setInterval(() => checkPub(f[0]), 1000),
+      interval: setInterval(() => checkPub(f[0]), 3000),
       uid: f[1]
     };
     checkPub(f[0]);
@@ -173,7 +174,6 @@ export const setupInterval = () => {
   window.inter.checkPub = checkPub;
   window.inter.pubs = {};
   window.inter.subs = {};
-  window.inter.changes = [];
   checkPublications();
-  window.inter.interval = setInterval(checkPublications, 1000);
+  window.inter.interval = setInterval(checkPublications, 4000);
 };
