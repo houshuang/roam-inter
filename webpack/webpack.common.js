@@ -14,12 +14,6 @@ module.exports = {
   },
   plugins: [
     new CleanWebpackPlugin(),
-    new CopyWebpackPlugin({
-      patterns: [{ from: Path.resolve(__dirname, "../public"), to: "public" }]
-    }),
-    new HtmlWebpackPlugin({
-      template: Path.resolve(__dirname, "../src/index.html")
-    }),
     new NodePolyfillPlugin()
   ],
   resolve: {

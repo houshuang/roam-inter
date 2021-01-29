@@ -1,6 +1,7 @@
 import { btree, btreeBlock, btreeBlock2 } from "./zettel";
 import { btree2 } from "./zettel2";
 import { compact, flattenDeep, omit, flatten, maxBy } from "lodash";
+import { blocks } from "./blockExamples";
 
 // flattens a tree of blocks, adding parent-uid to all child blocks, as well as depth
 // note that if the top node is a page, the parent-uid of the depth=1 will refer to a page, not a block
@@ -24,11 +25,6 @@ export const bArrayToBtree = (ba, allNodes, depth = 0) => {
   // new Array(maxDepth).fill("").forEach((_, depth) => {
   //   ba.filter(x => x.depth === depth).forEach(f => {});
   // });
-  console.log({
-    ba: ba.map(x => x.uid),
-    allNodes: (allNodes || []).map(x => x.uid),
-    depth: depth
-  });
   if (!allNodes) {
     allNodes = ba;
   }
@@ -145,6 +141,21 @@ const compareDepthSameParent = (ba, ba2, parentUid, depth = 0) => {
   return ops;
 };
 
+// assumes a is a strict subset of b, extracts changes, and orders them by depth
+export const simpleCompare = (a, b) => {
+  const ba = btreeToBArray(a);
+  const bb = btreeToBArray(b);
+  const newBlocks = bb.filter(x => !ba.find(z => z.uid === x.uid));
+  newBlocks.sort((j, k) => j.depth - k.depth);
+  const updatedBlocks = bb.filter(block => {
+    const matchingBlock = ba.find(z => z.uid === block.uid);
+    if (matchingBlock && matchingBlock.string !== block.string) {
+      return true;
+    }
+  });
+  return { newBlocks, updatedBlocks };
+};
+
 // we are first creating and then sorting... should we do both at the same time, or can we reconcile them afterwards?
 // there are three cases:
 //   - pure move
@@ -161,15 +172,14 @@ const compareDepthSameParent = (ba, ba2, parentUid, depth = 0) => {
 // so we also need to calculate blocks that we need to create, and maybe do that first? This is the tricky part
 // do we need a way to transform between a tree structure and a flat structure?
 export const btreeDiff = (bt, bt2) => {
-  let ba = btreeToBArray(bt[0]);
-  const ba2 = btreeToBArray(bt2[0]);
+  let ba = btreeToBArray(bt);
+  const ba2 = btreeToBArray(bt2);
   const maxDepth = maxBy(ba, x => x.depth).depth;
 
   const res = [...new Array(maxDepth + 1).keys()].map(depth => {
     const depthBlocks = ba.filter(x => x.depth === depth);
     const parentUids = [...new Set(depthBlocks.map(x => x["parent-uid"]))];
     return parentUids.map(p => {
-      console.log("rep", ba.map(x => x.uid));
       const ary = bArrayToBtree(ba);
       ba = btreeToBArray(ary);
 
@@ -177,7 +187,7 @@ export const btreeDiff = (bt, bt2) => {
     });
     compareDepth(ba, ba2, d);
   });
-  console.log(compact(flattenDeep(res)));
+  return compact(flattenDeep(res));
 };
 
-btreeDiff(btreeBlock, btreeBlock2);
+// console.log(simpleCompare(blocks.b, blocks.a));
