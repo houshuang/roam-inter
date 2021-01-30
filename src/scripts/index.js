@@ -2,6 +2,7 @@ import { btree, btreeBlock, btreeBlock2 } from "./zettel";
 import { btreeDiff, btreeToBArray, bArrayToBtree } from "./btreeDiff";
 import { setupSharedb, connection } from "./sharedb";
 import { setupInterval } from "./publications";
+import { setupConstants } from "./blockHelpers";
 import {
   blocksToMarkdown,
   getPageWithChildren,
@@ -22,5 +23,6 @@ global.inter.btreeToBArray = btreeToBArray;
 global.inter.bArrayToBtree = bArrayToBtree;
 
 setupSharedb(() => {
+  setupConstants();
   setupInterval();
 });

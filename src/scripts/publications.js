@@ -1,10 +1,22 @@
+import cuid from "cuid";
 import { getBlockWithChildren, insertBlockTreeAsChild } from "./blockHelpers";
-import { simpleCompare } from "./btreeDiff";
+import { simpleCompare, btreeToBArray } from "./btreeDiff";
 import { pushChange } from "./sharedb";
 
 const blockRegexp = new RegExp("\\(\\((.+?)\\)\\)", "g");
-const replaceBlockRef = (string, target) =>
-  string.replace(blockRegexp, `((${target}/$1))`);
+const pureBlockRegexp = new RegExp("\\(\\(([^/]+?)\\)\\)", "g");
+
+const fixUid = uid => {
+  if (!uid) {
+    return uid;
+  }
+  const db = window.inter.dbname;
+  const [_, second] = uid.split("/");
+  return db + "/" + (second || uid);
+};
+
+export const replaceBlockRef = (string, target) =>
+  string.replace(pureBlockRegexp, `((${target}/$1))`);
 
 const trySplit = item => {
   const [first, last] = item.string.split("::");
@@ -21,20 +33,36 @@ const getInterAttribute = attr => {
   return hits;
 };
 
-const actOnChanges = (subname, block, changes, topParent) => {
+const fixBlockRefDb = block => {
+  const db = window.inter.dbname;
+  return {
+    ...block,
+    uid: fixUid(block.uid),
+    "parent-uid": fixUid(block["parent-uid"]),
+    string: replaceBlockRef(block.string, db)
+  };
+};
+
+const actOnChanges = (subname, block, changes, topParent, externalRefs) => {
   (changes.newBlocks || []).forEach(f => {
     pushChange({
       subname,
+      externalRefs,
       type: "create",
-      block: {
+      block: fixBlockRefDb({
         ...f,
         "parent-uid":
           f["parent-uid"] === topParent ? undefined : f["parent-uid"]
-      }
+      })
     });
   });
   (changes.updatedBlocks || []).forEach(f => {
-    pushChange({ subname, type: "update", block: f });
+    pushChange({
+      externalRefs,
+      subname,
+      type: "update",
+      block: fixBlockRefDb(f)
+    });
   });
 };
 
@@ -42,20 +70,60 @@ const checkPub = pub => {
   const { pubs } = window.inter;
   const existingBlock = pubs[pub];
   if (!existingBlock) {
+    console.warn("no pubs[pub] for me", pub);
+  }
+  const blockWC = getBlockWithChildren(existingBlock.uid, true);
+
+  if (!blockWC) {
+    console.warn("no blocks for pub", pub);
     return;
   }
-  const block = getBlockWithChildren(existingBlock.uid)[0].children;
+
+  // really ugly approach but works
+  const blockRefs = JSON.stringify(blockWC).match(blockRegexp);
+  const blocks = btreeToBArray(blockWC);
+  const externalRefs = !blockRefs
+    ? []
+    : blockRefs
+        .map(x => x.slice(2, -2))
+        .filter(x => !blocks.find(z => z.uid === x));
+
+  externalRefs.forEach(ex => {
+    const search = fixUid(ex);
+    if (!window.inter.pubs[search]) {
+      console.log("New external ref which needs to be published", ex);
+      const [_, second] = ex.split("/");
+      const uid = second || ex;
+
+      window.inter.pubs[fixUid(ex)] = {
+        interval: setInterval(() => checkPub(fixUid(ex)), 700),
+        uid,
+        type: "externalRef"
+      };
+      setTimeout(() => checkPub(fixUid(ex)), 0);
+    }
+  });
+
+  const block =
+    existingBlock.type === "externalRef" ? blockWC : blockWC[0].children;
   if (existingBlock.contents) {
     const changes = simpleCompare(existingBlock.contents, block);
     if (changes.newBlocks.length > 0 || changes.updatedBlocks.length > 0) {
-      actOnChanges(pub, existingBlock, changes, existingBlock.uid);
+      actOnChanges(
+        pub,
+        existingBlock,
+        changes,
+        existingBlock.uid,
+        externalRefs
+      );
     }
   } else {
     if (block) {
       pushChange({
         subname: pub,
         type: "instantiate",
-        blockWithChildren: block
+        blockWithChildren: block,
+        externalRefs: externalRefs.map(x => fixUid(x))
       });
     }
   }
@@ -63,21 +131,36 @@ const checkPub = pub => {
 };
 
 const applyChange = (target, change) => {
+  if (change.externalRefs) {
+    change.externalRefs.filter(x => !window.inter.subs[x]).forEach(f => {
+      const parentUid = cuid();
+      window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": window.inter.depot, order: 0 },
+        block: { string: f, uid: parentUid }
+      });
+      window.inter.subs[f] = {
+        interval: setInterval(() => checkSub(f), 500),
+        uid: parentUid,
+        index: 0,
+        subname: f
+      };
+      setTimeout(() => checkSub(f), 0);
+    });
+  }
+
   console.log("Applying change", change, " to target ", target);
   if (change.type === "instantiate") {
     const existingBlocks = getBlockWithChildren(target);
     console.log("trying to instantiate", target, change);
     if (!existingBlocks || !existingBlocks.children) {
-      insertBlockTreeAsChild(change.blockWithChildren, target, 0, target, str =>
-        replaceBlockRef(str, target)
-      );
+      insertBlockTreeAsChild(change.blockWithChildren, target, 0);
     } else {
       console.warn("Need to instantiate but there are already children");
     }
   } else if (change.type === "update") {
     roamAlphaAPI.updateBlock({
       block: {
-        uid: target + "/" + change.block.uid,
+        uid: change.block.uid,
         string: replaceBlockRef(change.block.string, target)
       }
     });
@@ -85,23 +168,24 @@ const applyChange = (target, change) => {
     roamAlphaAPI.createBlock({
       location: {
         "parent-uid": change.block["parent-uid"]
-          ? target + "/" + change.block["parent-uid"]
+          ? change.block["parent-uid"]
           : target,
         order: change.block.order
       },
       block: {
-        uid: target + "/" + change.block.uid,
+        uid: change.block.uid,
         string: replaceBlockRef(change.block.string, target)
       }
     });
   }
 };
 
-const checkSub = subuid => {
-  const sub = window.inter.subs[subuid];
-  if (!sub || !sub.index) {
-    // console.warn("no sub/sub.index", sub);
-  }
+const checkSub = subname => {
+  const sub = window.inter.subs[subname];
+  // if (!sub || !sub.index) {
+  //   console.warn("no sub/sub.index", sub);
+  //   return;
+  // }
   const changes = window.inter.sharedbDoc.data.changes;
   if (changes.length === sub.index) {
     return;
@@ -112,42 +196,44 @@ const checkSub = subuid => {
     .slice(sub.index, 9999)
     .filter(f => f.subname === sub.subname)
     .forEach(f => {
-      applyChange(subuid, f);
+      applyChange(sub.uid, f);
     });
 
   sub.index = changes.length;
 };
 
 const checkPublications = () => {
-  const pubs = getInterAttribute("publish");
-  const subs = getInterAttribute("subscribe");
+  const pubs = getInterAttribute("pub");
+  const subs = getInterAttribute("sub");
   const newPubs = pubs.filter(x => !window.inter.pubs[x[0]]);
   if (newPubs.length > 0) {
     console.log("new pubs", newPubs);
   }
-  const newSubs = subs.filter(x => !window.inter.subs[x[1]]);
+  const newSubs = subs.filter(x => !window.inter.subs[x[0]]);
   if (newSubs.length > 0) {
     console.log("new subs", newSubs);
   }
   newSubs.forEach(f => {
-    window.inter.subs[f[1]] = {
-      interval: setInterval(() => checkSub(f[1]), 500),
+    window.inter.subs[f[0]] = {
+      interval: setInterval(() => checkSub(f[0]), 500),
       uid: f[1],
       index: 0,
       subname: f[0]
     };
-    checkSub(f[1]);
+    checkSub(f[0]);
   });
   newPubs.forEach(f => {
     window.inter.pubs[f[0]] = {
-      interval: setInterval(() => checkPub(f[0]), 3000),
+      interval: setInterval(() => checkPub(f[0]), 500),
       uid: f[1]
     };
     checkPub(f[0]);
   });
   const removedPubs = Object.keys(window.inter.pubs).filter(
-    f => !pubs.find(z => z[0] === f)
+    f =>
+      !pubs.find(z => z[0] === f) && window.inter.pubs[f].type !== "externalRef"
   );
+
   if (removedPubs.length > 0) {
     console.log("removed pubs", removedPubs);
   }
@@ -175,5 +261,5 @@ export const setupInterval = () => {
   window.inter.pubs = {};
   window.inter.subs = {};
   checkPublications();
-  window.inter.interval = setInterval(checkPublications, 4000);
+  window.inter.interval = setInterval(checkPublications, 500);
 };
