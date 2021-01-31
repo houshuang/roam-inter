@@ -11,7 +11,7 @@ export const setupSharedb = callback => {
 
   const socket = new WebSocket(shareDbUrl);
   const connection = new ShareDBClient.Connection(socket);
-  window.inter.sharedbDoc = connection.get("rz", "roam-inter2");
+  window.inter.sharedbDoc = connection.get("rz", "roam-inter3");
   console.log(inter.sharedbDoc);
   window.inter.sharedbDoc.subscribe();
   window.inter.sharedbDoc.once("load", () => {

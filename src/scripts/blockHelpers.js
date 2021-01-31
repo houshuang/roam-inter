@@ -1,5 +1,5 @@
 import cuid from "cuid";
-import { replaceBlockRef } from "./publications";
+import { replaceBlockRef, cleanBlockRef } from "./publications";
 
 // takes a tree of blocks, and sorts them recursively, using the order key
 export const sortBlockTree = (btree, recur = 0, addDBName) => {
@@ -90,7 +90,7 @@ export const insertBlockTreeAsChild = (btree, parentUid, order) => {
     } else {
       roamAlphaAPI.createBlock({
         location: { "parent-uid": parentUid, order: i + order },
-        block: { string: node.string || node.title, uid: nodeId }
+        block: { string: cleanBlockRef(node.string || node.title), uid: nodeId }
       });
     }
     insertBlockTreeAsChild(node.children, nodeId, 0);

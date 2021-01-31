@@ -3,7 +3,15 @@ import { getBlockWithChildren, insertBlockTreeAsChild } from "./blockHelpers";
 import { simpleCompare, btreeToBArray } from "./btreeDiff";
 import { pushChange } from "./sharedb";
 
+if (!window.inter) {
+  window.inter = {};
+}
+window.inter.dbname = document.location.href.split("/app/")[1].split("/")[0];
 const blockRegexp = new RegExp("\\(\\((.+?)\\)\\)", "g");
+const dbBlockRegexp = new RegExp(
+  `\\(\\(${window.inter.dbname}\\/(.+?)\\)\\)`,
+  "g"
+);
 const pureBlockRegexp = new RegExp("\\(\\(([^/]+?)\\)\\)", "g");
 
 const fixUid = uid => {
@@ -17,6 +25,8 @@ const fixUid = uid => {
 
 export const replaceBlockRef = (string, target) =>
   string.replace(pureBlockRegexp, `((${target}/$1))`);
+
+export const cleanBlockRef = string => string.replace(dbBlockRegexp, `(($1))`);
 
 const trySplit = item => {
   const [first, last] = item.string.split("::");
@@ -133,6 +143,10 @@ const checkPub = pub => {
 const applyChange = (target, change) => {
   if (change.externalRefs) {
     change.externalRefs.filter(x => !window.inter.subs[x]).forEach(f => {
+      const [_, second] = f.split("/");
+      if (second === window.inter.dbname) {
+        return;
+      }
       const parentUid = cuid();
       window.roamAlphaAPI.createBlock({
         location: { "parent-uid": window.inter.depot, order: 0 },
@@ -161,7 +175,7 @@ const applyChange = (target, change) => {
     roamAlphaAPI.updateBlock({
       block: {
         uid: change.block.uid,
-        string: replaceBlockRef(change.block.string, target)
+        string: cleanBlockRef(change.block.string)
       }
     });
   } else if (change.type === "create") {
@@ -174,7 +188,7 @@ const applyChange = (target, change) => {
       },
       block: {
         uid: change.block.uid,
-        string: replaceBlockRef(change.block.string, target)
+        string: cleanBlockRef(change.block.string)
       }
     });
   }
