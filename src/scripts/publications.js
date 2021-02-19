@@ -2,6 +2,7 @@ import cuid from "cuid";
 import { getBlockWithChildren, insertBlockTreeAsChild } from "./blockHelpers";
 import { simpleCompare, btreeToBArray } from "./btreeDiff";
 import { pushChange } from "./sharedb";
+import { checkConvo } from "./convos";
 
 if (!window.inter) {
   window.inter = {};
@@ -24,7 +25,7 @@ const fixUid = uid => {
 };
 
 export const replaceBlockRef = (string, target) =>
-  string.replace(pureBlockRegexp, `((${target}/$1))`);
+  (string || "").replace(pureBlockRegexp, `((${target}/$1))`);
 
 export const cleanBlockRef = string => string.replace(dbBlockRegexp, `(($1))`);
 
@@ -37,7 +38,7 @@ const trySplit = item => {
 
 const getInterAttribute = attr => {
   const rawHits = roamAlphaAPI.q(
-    `[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "roam/inter/${attr}"] ]`
+    `[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "${attr}"] ]`
   );
   const hits = rawHits.map(x => trySplit(x[0]));
   return hits;
@@ -76,7 +77,7 @@ const actOnChanges = (subname, block, changes, topParent, externalRefs) => {
   });
 };
 
-const checkPub = pub => {
+export const checkPub = pub => {
   const { pubs } = window.inter;
   const existingBlock = pubs[pub];
   if (!existingBlock) {
@@ -194,7 +195,7 @@ const applyChange = (target, change) => {
   }
 };
 
-const checkSub = subname => {
+export const checkSub = subname => {
   const sub = window.inter.subs[subname];
   // if (!sub || !sub.index) {
   //   console.warn("no sub/sub.index", sub);
@@ -216,9 +217,15 @@ const checkSub = subname => {
   sub.index = changes.length;
 };
 
-const checkPublications = () => {
+export const checkPublications = () => {
   const pubs = getInterAttribute("pub");
   const subs = getInterAttribute("sub");
+  const convos = getInterAttribute("conversation");
+
+  const newConvos = convos.filter(x => !window.inter.convos[x[0]]);
+  if (newConvos.length > 0) {
+    console.log("new convos", newConvos);
+  }
   const newPubs = pubs.filter(x => !window.inter.pubs[x[0]]);
   if (newPubs.length > 0) {
     console.log("new pubs", newPubs);
@@ -236,6 +243,17 @@ const checkPublications = () => {
     };
     checkSub(f[0]);
   });
+
+  newConvos.forEach(f => {
+    window.inter.convos[f[0]] = {
+      interval: setInterval(() => checkConvo(f[0]), 500),
+      uid: f[1],
+      index: 0,
+      subname: f[0]
+    };
+    checkConvo(f[0]);
+  });
+
   newPubs.forEach(f => {
     window.inter.pubs[f[0]] = {
       interval: setInterval(() => checkPub(f[0]), 500),
@@ -245,7 +263,9 @@ const checkPublications = () => {
   });
   const removedPubs = Object.keys(window.inter.pubs).filter(
     f =>
-      !pubs.find(z => z[0] === f) && window.inter.pubs[f].type !== "externalRef"
+      !pubs.find(z => z[0] === f) &&
+      window.inter.pubs[f].type !== "externalRef" &&
+      window.inter.pubs[f].type !== "convo"
   );
 
   if (removedPubs.length > 0) {
@@ -274,6 +294,8 @@ export const setupInterval = () => {
   window.inter.checkPub = checkPub;
   window.inter.pubs = {};
   window.inter.subs = {};
+  window.inter.convos = {};
+  window.inter.checkConvo = checkConvo;
   checkPublications();
   window.inter.interval = setInterval(checkPublications, 500);
 };
