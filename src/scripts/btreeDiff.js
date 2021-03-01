@@ -10,9 +10,9 @@ export const btreeToBArray = (bt, depth = 0, parentUid) => {
     return [];
   }
   return flattenDeep(
-    bt.map(a => [
+    bt.map((a) => [
       { "parent-uid": parentUid, depth, ...omit(a, "children") },
-      ...btreeToBArray(a.children, depth + 1, a.uid)
+      ...btreeToBArray(a.children, depth + 1, a.uid),
     ])
   );
 };
@@ -30,26 +30,27 @@ export const bArrayToBtree = (ba, allNodes, depth = 0) => {
   }
 
   return ba
-    .filter(x => x.depth === depth)
+    .filter((x) => x.depth === depth)
     .sort((f, j) => f.order - j.order)
-    .map(n => {
-      const children = allNodes.filter(x => x["parent-uid"] === n.uid);
+    .map((n) => {
+      const children = allNodes.filter((x) => x["parent-uid"] === n.uid);
       return {
         ...n,
         ...(children.length === 0
           ? {}
-          : bArrayToBtree(children, allNodes, depth + 1))
+          : bArrayToBtree(children, allNodes, depth + 1)),
       };
       return n;
     });
 };
 
-Array.prototype.move = function(from, to) {
+Array.prototype.move = function (from, to) {
   this.splice(to, 0, this.splice(from, 1)[0]);
 };
 
 // calculate minimal amount of moves to get from a to b, assuming all elements exist in both, only a single time
 const calculateMinimalMoves = (a, b) => {
+  console.log("calc", a, b);
   let moves = [];
   let notDone = true;
   while (notDone) {
@@ -69,20 +70,22 @@ const calculateMinimalMoves = (a, b) => {
 
 // takes two blockArrays, and a depth level, and only compares blcoks at that level
 const compareDepthSameParent = (ba, ba2, parentUid, depth = 0) => {
-  const b = ba.filter(x => x.depth === depth && x["parent-uid"] === parentUid);
+  const b = ba.filter(
+    (x) => x.depth === depth && x["parent-uid"] === parentUid
+  );
   const b2 = ba2.filter(
-    x => x.depth === depth && x["parent-uid"] === parentUid
+    (x) => x.depth === depth && x["parent-uid"] === parentUid
   );
   // find inserts and deletes
-  const deletes = b.filter(x => !b2.find(f => x.uid === f.uid));
-  const inserts = b2.filter(x => !b.find(f => x.uid === f.uid));
+  const deletes = b.filter((x) => !b2.find((f) => x.uid === f.uid));
+  const inserts = b2.filter((x) => !b.find((f) => x.uid === f.uid));
   const ops = [];
 
   // carry out deletes, checking if it has just been moved to another level
-  deletes.forEach(x => {
-    const existingBlock = ba2.find(z => z.uid === x.uid);
+  deletes.forEach((x) => {
+    const existingBlock = ba2.find((z) => z.uid === x.uid);
     if (existingBlock) {
-      let baToChange = ba.find(z => z.uid === x.uid);
+      let baToChange = ba.find((z) => z.uid === x.uid);
       baToChange["parent-uid"] = existingBlock["parent-uid"];
       baToChange["depth"] = existingBlock["depth"];
       baToChange["hasMoved"] = true;
@@ -90,70 +93,91 @@ const compareDepthSameParent = (ba, ba2, parentUid, depth = 0) => {
       ops.push({ type: "remove", uid: x.uid });
     }
 
-    b.splice(b.findIndex(z => z.uid === x.uid), 1);
+    b.splice(
+      b.findIndex((z) => z.uid === x.uid),
+      1
+    );
   });
 
   // generate blockUids for easier sorting
-  const blockUids = b.sort((x, y) => x.order - y.order).map(x => x.uid);
+  const blockUids = b.sort((x, y) => x.order - y.order).map((x) => x.uid);
 
   // then do inserts
-  inserts.sort((x, y) => x.order - y.order).forEach(x => {
-    const existingBlock = ba.find(z => z.uid === x.uid);
-    if (existingBlock) {
-      existingBlock["parent-uid"] = parentUid;
-      baToChange["depth"] = depth;
-      baToChange["hasMoved"] = true;
-      blockUids.splice(x.order, 0, x.uid);
-    } else {
-      blockUids.splice(x.order, 0, x.uid);
-      ba.push({ order: x.order, ...ba2.find(z => z.uid === x.uid) });
-      ops.push({ type: "create", ...x });
-    }
-  });
+  inserts
+    .sort((x, y) => x.order - y.order)
+    .forEach((x) => {
+      const existingBlock = ba.find((z) => z.uid === x.uid);
+      if (existingBlock) {
+        let baToChange = ba.find((z) => z.uid === x.uid);
+        existingBlock["parent-uid"] = parentUid;
+        baToChange["depth"] = depth;
+        baToChange["hasMoved"] = true;
+        blockUids.splice(x.order, 0, x.uid);
+      } else {
+        blockUids.splice(x.order, 0, x.uid);
+        ba.push({ order: x.order, ...ba2.find((z) => z.uid === x.uid) });
+        ops.push({ type: "create", ...x });
+      }
+    });
 
   // now we should have the same blocks, in the same order that Roam would generate
   // so what is left to get the same order?
-  const moves = calculateMinimalMoves(blockUids, b2.map(x => x.uid));
-  moves.forEach(f => {
+  const moves = calculateMinimalMoves(
+    blockUids,
+    b2.map((x) => x.uid)
+  );
+  moves.forEach((f) => {
     ops.push({
       type: "move",
       uid: blockUids[f[0]],
       order: f[1],
-      "parent-uid": ba.find(z => z.uid === blockUids[f[0]])["parent-uid"]
+      "parent-uid": ba.find((z) => z.uid === blockUids[f[0]])["parent-uid"],
     });
+    blockUids.move(f[0], f[1]);
   });
 
   // see if there are any parent-uid moves that are coming from above, which do not need reordering
   blockUids
     .filter(
       (x, i) =>
-        !moves.some(z => i === z[0]) && ba.find(z => z.uid === x).hasMoved
+        !moves.some((z) => i === z[0]) && ba.find((z) => z.uid === x).hasMoved
     )
-    .forEach(x => {
-      const block = ba.find(z => z.uid === x);
+    .forEach((x) => {
+      const block = ba.find((z) => z.uid === x);
       ops.push({
         type: "move",
         uid: x,
         order: block.order,
-        "parent-uid": block["parent-uid"]
+        "parent-uid": block["parent-uid"],
       });
     });
   return ops;
 };
 
 // assumes a is a strict subset of b, extracts changes, and orders them by depth
-export const simpleCompare = (a, b) => {
-  const ba = btreeToBArray(a);
-  const bb = btreeToBArray(b);
-  const newBlocks = bb.filter(x => !ba.find(z => z.uid === x.uid));
-  newBlocks.sort((j, k) => j.depth - k.depth);
-  const updatedBlocks = bb.filter(block => {
-    const matchingBlock = ba.find(z => z.uid === block.uid);
-    if (matchingBlock && matchingBlock.string !== block.string) {
-      return true;
-    }
+// export const simpleCompare = (a, b) => {
+//   const ba = btreeToBArray(a);
+//   const bb = btreeToBArray(b);
+//   const newBlocks = bb.filter((x) => !ba.find((z) => z.uid === x.uid));
+//   newBlocks.sort((j, k) => j.depth - k.depth);
+//   const updatedBlocks = bb.filter((block) => {
+//     const matchingBlock = ba.find((z) => z.uid === block.uid);
+//     if (matchingBlock && matchingBlock.string !== block.string) {
+//       return true;
+//     }
+//   });
+//   return { newBlocks, updatedBlocks };
+// };
+
+// takes an array of blocks, and move statement, and recursively updates all children with the correct depth
+// !!MUTATES ARRAY
+export const updateDepth = (ba, block) => {
+  const children = ba.filter((x) => x["parent-uid"] === block.uid);
+  children.forEach((c) => {
+    c.depth = block.depth + 1;
+    updateDepth(ba, c);
   });
-  return { newBlocks, updatedBlocks };
+  return ba;
 };
 
 // we are first creating and then sorting... should we do both at the same time, or can we reconcile them afterwards?
@@ -174,20 +198,25 @@ export const simpleCompare = (a, b) => {
 export const btreeDiff = (bt, bt2) => {
   let ba = btreeToBArray(bt);
   const ba2 = btreeToBArray(bt2);
-  const maxDepth = maxBy(ba, x => x.depth).depth;
+  const maxDepth = maxBy(ba, (x) => x.depth).depth;
 
-  const res = [...new Array(maxDepth + 1).keys()].map(depth => {
-    const depthBlocks = ba.filter(x => x.depth === depth);
-    const parentUids = [...new Set(depthBlocks.map(x => x["parent-uid"]))];
-    return parentUids.map(p => {
-      const ary = bArrayToBtree(ba);
-      ba = btreeToBArray(ary);
+  const res = [...new Array(maxDepth + 1).keys()].map((depth) => {
+    const depthBlocks = ba.filter((x) => x.depth === depth);
+    const parentUids = [...new Set(depthBlocks.map((x) => x["parent-uid"]))];
+    return parentUids.map((p) => {
+      const res = compareDepthSameParent(ba, ba2, p, depth);
 
-      return compareDepthSameParent(ba, ba2, p, depth);
+      // if we moved any blocks, we need to update depth of all the children to
+      // make sure they are correctly processed in the right place
+      res
+        .filter((x) => x.type === "move")
+        .forEach((x) => {
+          updateDepth(ba, x);
+        });
+      return res;
     });
-    compareDepth(ba, ba2, d);
   });
   return compact(flattenDeep(res));
 };
 
-// console.log(simpleCompare(blocks.b, blocks.a));
+// console.log(btreeDiff(blocks.b, blocks.a));
