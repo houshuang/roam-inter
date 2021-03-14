@@ -23,12 +23,17 @@ const trySplit = (item) => {
   }
 };
 
+const getInterAttribute = (attr) => {
+  const rawHits = roamAlphaAPI.q(
+    `[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "roam/inter/${attr}"] ]`
+  );
+  const hits = rawHits.map((x) => trySplit(x[0]));
+  return hits;
+};
+
 const updatePub = (title, doc, after) => {
-  console.log("updating ", title);
   const data = doc.data.tree;
-  console.log(after);
   const newData = barrayToBMap(bPullTreeToBArray([after]));
-  console.log(data, newData);
   const newBlocks = Object.keys(newData).filter((x) => !data[x]);
   const delBlocks = Object.keys(data).filter((x) => !newData[x]);
   const updateString = Object.keys(data).filter(
@@ -37,11 +42,13 @@ const updatePub = (title, doc, after) => {
   const updateOrder = Object.keys(data).filter(
     (x) => newData[x] && data[x].order !== newData[x].order
   );
+  const updateParentUid = Object.keys(data).filter(
+    (x) => newData[x] && data[x]["parent-uid"] !== newData[x]["parent-uid"]
+  );
 
-  console.log({ newBlocks, delBlocks, updateString, updateOrder });
   const ops = newBlocks
     .map((x) => ({ p: ["tree", x], oi: newData[x] }))
-    .concat(delBlocks.map((x) => ({ p: ["tree", x], od: x })))
+    .concat(delBlocks.map((x) => ({ p: ["tree", x], od: true })))
     .concat(
       updateString.map((x) => ({
         p: ["tree", x, "string"],
@@ -53,15 +60,20 @@ const updatePub = (title, doc, after) => {
         p: ["tree", x, "order"],
         oi: newData[x].order,
       }))
+    )
+    .concat(
+      updateParentUid.map((x) => ({
+        p: ["tree", x, "parent-uid"],
+        oi: newData[x]["parent-uid"],
+      }))
     );
   console.log(ops);
-
   ops.forEach((op) => doc.submitOp(op));
 };
 
 const createPub = ([title, uid]) => {
+  console.log("Creating pub ", title);
   const blockWC = barrayToBMap(btreeToBArray(getBlockWithChildren(uid, false)));
-  console.log(blockWC);
   const doc = window.inter.connection.get(
     "inter",
     window.inter.dbname + "/" + title
@@ -69,11 +81,8 @@ const createPub = ([title, uid]) => {
   doc.subscribe();
   doc.once("load", () => {
     if (!doc.type) {
-      console.log("initiating doc");
       doc.create({ tree: blockWC || {} });
     }
-    console.log(doc);
-    console.log("ready, callback");
     window.inter.pubs[title] = { doc, uid, title };
 
     window.roamAlphaAPI.data.addPullWatch(
@@ -90,7 +99,8 @@ const updatedPubs = (after) => {
   }
   if (after[":block/_refs"]) {
     const pubs = after[":block/_refs"].map((pub) => trySplit(pub));
-    const newPubs = pubs.filter((x) => !window.inter.pubs[x[0]]);
+    console.log({ after, pubs });
+    const newPubs = pubs.filter((x) => x && !window.inter.pubs[x[0]]);
     newPubs.forEach((pub) => createPub(pub));
   }
 };
@@ -102,13 +112,6 @@ export const setup = () => {
     '[:node/title "publication"]',
     (_, after) => updatedPubs(after)
   );
+  const pubs = getInterAttribute("publication");
+  pubs.forEach((x) => createPub(x));
 };
-
-// {":block/children":[{":block/children":[{":block/string":"all reads are logged to a central server"},{":block/string":"easily see who else have taken notes"},{":block/string":"easily import PDF"},{":block/string":"download and open a PDF on a specific pagef"}],":block/string":"Scrobblr ((https://www.youtube.com/watch?v=O5LgG_K3y8A&ab_channel=StianH%C3%A5klev))"}],":block/string":"Videos"}"
-// iwindow
-//   .roamAlphaAPI
-//   .data
-//   .addPullWatch(
-//   	"[:block/children :block/string {:block/children ...}]",
-//     '[:block/uid "02-21-2021"]',
-//      function a(before, after) { console.log("before", before, "after", after);)
