@@ -33,14 +33,14 @@ const getInterAttribute = (attr) => {
   return hits.filter((x) => Array.isArray(x));
 };
 
-const updatePub = (title, doc, rawWc) => {
+const updatePub = (title, doc, rawWc, rawNewData) => {
   if (!window.inter.pubs[title]) {
     console.log("Pub already removed, cancelling update", title);
     return;
   }
   const data = doc.data.tree;
   const wc = rawWc && rawWc[":block/children"] ? rawWc[":block/children"] : [];
-  const newData = barrayToBMap(bPullTreeToBArray(wc));
+  const newData = rawNewData || barrayToBMap(bPullTreeToBArray(wc));
   const newBlocks = Object.keys(newData).filter((x) => !data[x]);
   const delBlocks = Object.keys(data).filter((x) => !newData[x]);
   const updateString = Object.keys(data).filter(
@@ -98,6 +98,8 @@ const createPub = ([title, uid]) => {
     }
     const callback = (_, after) => updatePub(title, doc, after);
     window.inter.pubs[title] = { doc, uid, title, callback };
+    updatePub(title, doc, _, blockWC);
+    console.log({ wcRaw, wc, blockWC });
 
     window.roamAlphaAPI.data.addPullWatch(
       "[:block/children :block/string :block/uid :block/order {:block/children ...}]",
