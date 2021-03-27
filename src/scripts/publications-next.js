@@ -7,7 +7,7 @@ import {
   bPullTreeToBArray,
 } from "./btreeDiff";
 import { pushChange } from "./sharedb";
-import { cloneDeep } from "lodash";
+import { orderBy, cloneDeep, sum } from "lodash";
 
 if (!window.inter) {
   window.inter = {};
@@ -33,8 +33,9 @@ const getInterAttribute = (attr) => {
   return hits.filter((x) => Array.isArray(x));
 };
 
-const updatePub = (uid, title, doc, rawWc) => {
-  if (!window.inter.pubs[uid]) {
+const updatePub = (title, doc, rawWc) => {
+  if (!window.inter.pubs[title]) {
+    console.log("Pub already removed, cancelling update", title);
     return;
   }
   const data = doc.data.tree;
@@ -95,7 +96,7 @@ const createPub = ([title, uid]) => {
     if (!doc.type) {
       doc.create({ tree: blockWC || {} });
     }
-    const callback = (_, after) => updatePub(uid, title, doc, after);
+    const callback = (_, after) => updatePub(title, doc, after);
     window.inter.pubs[title] = { doc, uid, title, callback };
 
     window.roamAlphaAPI.data.addPullWatch(
@@ -106,9 +107,19 @@ const createPub = ([title, uid]) => {
   });
 };
 
-const updateSub = (doc, uid) => {
-  if (!doc.data || !doc.data.tree || !window.inter.subs[uid]) {
+const updateSub = (title, doc, uid) => {
+  if (!doc.data || !doc.data.tree || !window.inter.subs[title]) {
+    console.log(
+      "No data in doc, or sub already removed, cancelling update",
+      title
+    );
     return;
+  }
+
+  const timeout = window.inter.subs[title].timeout;
+  if (timeout) {
+    console.log("Clearing timeout", timeout);
+    clearTimeout(timeout);
   }
 
   const newData = doc.data.tree;
@@ -141,6 +152,21 @@ const updateSub = (doc, uid) => {
     moveBlocks,
   });
 
+  // set timeout here in case we crash
+  if (
+    sum(
+      [newBlocks, delBlocks, updateString, updateOrder, moveBlocks].map(
+        (x) => x.length
+      )
+    ) > 0
+  ) {
+    inter.subs[title].timeout = window.setTimeout(
+      () => updateSub(title, doc, uid),
+      65 * 1000
+    );
+    console.log("Setting timeout", inter.subs[title].timeout);
+  }
+
   let orderedNewBlocks = [];
   const oldUids = Object.keys(data).map((x) => data[x].uid);
 
@@ -158,14 +184,13 @@ const updateSub = (doc, uid) => {
   while (newBlocks.filter((x) => !x.hasBeenOrdered).length > 0) {
     i++;
     // Just to avoid infinite loops if we make some mistakes, or data is poorly structured
-    if (i > 2) {
+    if (i > 30) {
       console.error(
         "Too many iterations trying to determine insertion order of new blocks"
       );
       break;
     }
     const newUids = orderedNewBlocks.map((x) => x.uid);
-    console.log("we have", newUids);
     newBlocks
       .filter((x) => !x.hasBeenOrdered)
       .forEach((block, i) => {
@@ -189,7 +214,9 @@ const updateSub = (doc, uid) => {
 
     try {
       window.roamAlphaAPI.createBlock(blockSpecs);
-    } catch (e) {}
+    } catch (e) {
+      console.error("When creating ", blockSpecs, e);
+    }
   });
 
   updateString.forEach((block) => {
@@ -199,7 +226,6 @@ const updateSub = (doc, uid) => {
   });
 
   moveBlocks.forEach((block) => {
-    console.log("moving block", block);
     roamAlphaAPI.moveBlock({
       block: { uid: block.uid },
       location: {
@@ -214,6 +240,21 @@ const updateSub = (doc, uid) => {
       block: { uid: block.uid },
     });
   });
+
+  const updateParents = new Set(
+    updateOrder.map((block) => block["parent-uid"])
+  );
+  updateParents.forEach((parent) => {
+    const children = Object.keys(newData)
+      .filter((x) => newData[x]["parent-uid"] === parent)
+      .map((x) => newData[x]);
+    const sortedChildren = orderBy(children, "order");
+
+    roamAlphaAPI.data.block.reorderBlocks({
+      location: { "parent-uid": parent || uid },
+      blocks: sortedChildren.map((x) => x.uid),
+    });
+  });
 };
 
 const createSub = ([title, uid]) => {
@@ -226,8 +267,8 @@ const createSub = ([title, uid]) => {
   const doc = window.inter.connection.get("inter", title);
   doc.subscribe();
   doc.once("load", () => {
-    updateSub(doc, uid);
-    doc.on("op", () => updateSub(doc, uid));
+    updateSub(title, doc, uid);
+    doc.on("op", () => updateSub(title, doc, uid));
   });
   window.inter.subs[title] = { doc, uid, title };
 };
