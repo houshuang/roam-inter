@@ -7,7 +7,7 @@ import {
   bPullTreeToBArray,
 } from "./btreeDiff";
 import { pushChange } from "./sharedb";
-import { orderBy, cloneDeep, sum } from "lodash";
+import { orderBy, cloneDeep, sum, throttle } from "lodash";
 
 if (!window.inter) {
   window.inter = {};
@@ -96,7 +96,7 @@ const createPub = ([title, uid]) => {
     if (!doc.type) {
       doc.create({ tree: blockWC || {} });
     }
-    const callback = (_, after) => updatePub(title, doc, after);
+    const callback = throttle((_, after) => updatePub(title, doc, after), 5000);
     window.inter.pubs[title] = { doc, uid, title, callback };
     updatePub(title, doc, _, blockWC);
     console.log({ wcRaw, wc, blockWC });
@@ -270,7 +270,10 @@ const createSub = ([title, uid]) => {
   doc.subscribe();
   doc.once("load", () => {
     updateSub(title, doc, uid);
-    doc.on("op", () => updateSub(title, doc, uid));
+    doc.on(
+      "op",
+      throttle(() => updateSub(title, doc, uid), 5000)
+    );
   });
   window.inter.subs[title] = { doc, uid, title };
 };
