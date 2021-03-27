@@ -13,8 +13,8 @@ if (!window.inter) {
   window.inter = {};
 }
 
-window.inter.pubs = [];
-window.inter.subs = [];
+window.inter.pubs = {};
+window.inter.subs = {};
 
 const cancelAllPubs = () => {};
 
@@ -33,7 +33,10 @@ const getInterAttribute = (attr) => {
   return hits.filter((x) => Array.isArray(x));
 };
 
-const updatePub = (title, doc, rawWc) => {
+const updatePub = (uid, title, doc, rawWc) => {
+  if (!window.inter.pubs[uid]) {
+    return;
+  }
   const data = doc.data.tree;
   const wc = rawWc && rawWc[":block/children"] ? rawWc[":block/children"] : [];
   const newData = barrayToBMap(bPullTreeToBArray(wc));
@@ -92,18 +95,19 @@ const createPub = ([title, uid]) => {
     if (!doc.type) {
       doc.create({ tree: blockWC || {} });
     }
-    window.inter.pubs[title] = { doc, uid, title };
+    const callback = (_, after) => updatePub(uid, title, doc, after);
+    window.inter.pubs[title] = { doc, uid, title, callback };
 
     window.roamAlphaAPI.data.addPullWatch(
       "[:block/children :block/string :block/uid :block/order {:block/children ...}]",
       `[:block/uid "${uid}"]`,
-      (_, after) => updatePub(title, doc, after)
+      callback
     );
   });
 };
 
 const updateSub = (doc, uid) => {
-  if (!doc.data || !doc.data.tree) {
+  if (!doc.data || !doc.data.tree || !window.inter.subs[uid]) {
     return;
   }
 
@@ -229,32 +233,52 @@ const createSub = ([title, uid]) => {
 };
 
 const updatedPubs = (after) => {
-  if (!after) {
-    return;
-  }
-  if (after[":block/_refs"]) {
-    const pubs = after[":block/_refs"].map((pub) => trySplit(pub));
-    const newPubs = pubs.filter(
-      (x) => x && Array.isArray(x) && !window.inter.pubs[x[0]]
+  const pubs = after ? after[":block/_refs"].map((pub) => trySplit(pub)) : [];
+  const newPubs = pubs.filter(
+    (x) => x && Array.isArray(x) && !window.inter.pubs[x[0]]
+  );
+  const pubIds = pubs.map((x) => x[0]);
+  const removedPubs = Object.keys(window.inter.pubs).filter(
+    (x) => !pubIds.includes(x)
+  );
+
+  console.log("Removed Pubs", removedPubs);
+  removedPubs.forEach((pub) => {
+    const toRemove = window.inter.pubs[pub];
+    toRemove.doc.destroy();
+
+    window.roamAlphaAPI.data.removePullWatch(
+      "[:block/children :block/string :block/uid :block/order {:block/children ...}]",
+      `[:block/uid "${toRemove.uid}"]`,
+      toRemove.callback
     );
-    newPubs.forEach((pub) => createPub(pub));
-  }
+    delete window.inter.pubs[pub];
+  });
+
+  newPubs.forEach((pub) => createPub(pub));
 };
 
 const updatedSubs = (after) => {
-  if (!after) {
-    return;
-  }
-  if (after[":block/_refs"]) {
-    const subs = after[":block/_refs"].map((sub) => trySplit(sub));
-    const newSubs = subs.filter(
-      (x) => x && Array.isArray(x) && !window.inter.subs[x[0]]
-    );
-    newSubs.forEach((sub) => createSub(sub));
-  }
+  const subs = after ? after[":block/_refs"].map((sub) => trySplit(sub)) : [];
+  const newSubs = subs.filter(
+    (x) => x && Array.isArray(x) && !window.inter.subs[x[0]]
+  );
+
+  const subIds = subs.map((x) => x[0]);
+  const removedSubs = Object.keys(window.inter.subs).filter(
+    (x) => !subIds.includes(x)
+  );
+  console.log("Removed Subs", removedSubs);
+  removedSubs.forEach((sub) => {
+    const toRemove = window.inter.subs[sub];
+    toRemove.doc.destroy();
+    delete window.inter.subs[sub];
+  });
+
+  newSubs.forEach((sub) => createSub(sub));
 };
 
-// todo also need to do initial sweep!
+// sets up pullwatch for pubs and subs, and then does initial sweep for both
 export const setup = () => {
   roamAlphaAPI.data.addPullWatch(
     "[{:block/_refs [:block/string :block/uid]}]",
