@@ -13,6 +13,8 @@ if (!window.inter) {
   window.inter = {};
 }
 
+const blockRegexp = new RegExp("\\(\\((.+?)\\)\\)", "g");
+
 window.inter.pubs = {};
 window.inter.subs = {};
 
@@ -39,7 +41,11 @@ const updatePub = (title, doc, rawWc, rawNewData) => {
     return;
   }
   const data = doc.data.tree;
-  const wc = rawWc && rawWc[":block/children"] ? rawWc[":block/children"] : [];
+  const wc = inter.pubs[title].isBlockRef
+    ? rawWc
+    : rawWc && rawWc[":block/children"]
+    ? rawWc[":block/children"]
+    : [];
   const newData = rawNewData || barrayToBMap(bPullTreeToBArray(wc));
   const newBlocks = Object.keys(newData).filter((x) => !data[x]);
   const delBlocks = Object.keys(data).filter((x) => !newData[x]);
@@ -52,6 +58,21 @@ const updatePub = (title, doc, rawWc, rawNewData) => {
   const updateParentUid = Object.keys(data).filter(
     (x) => newData[x] && data[x]["parent-uid"] !== newData[x]["parent-uid"]
   );
+
+  // Deal with external block-refs
+  const blockRefs = JSON.stringify(newData).match(blockRegexp);
+  const blocks = Object.keys(newData);
+  const externalRefs = !blockRefs
+    ? []
+    : blockRefs
+        .map((x) => x.slice(2, -2))
+        .filter((x) => !blocks.find((z) => z.uid === x));
+
+  externalRefs.forEach((ex) => {
+    if (!window.inter.pubs[ex]) {
+      createPub([ex, ex, true]);
+    }
+  });
 
   const ops = newBlocks
     .map((x) => ({ p: ["tree", x], oi: newData[x] }))
@@ -78,11 +99,10 @@ const updatePub = (title, doc, rawWc, rawNewData) => {
           : { p: ["tree", x, "parent-uid"], od: true }
       )
     );
-  console.log("Applying ops for publication", title, ops);
   ops.forEach((op) => doc.submitOp(op));
 };
 
-const createPub = ([title, rawUid]) => {
+const createPub = ([title, rawUid, isBlockRef]) => {
   console.log("Creating pub ", title);
   let uid = rawUid;
   const linkTitle = title.trim().match(/^\[\[(.+)\]\]$/);
@@ -96,13 +116,17 @@ const createPub = ([title, rawUid]) => {
     } catch (e) {
       console.error(e);
       window.alert(
-        `Cannot publish non-existant page ${linkTitle[1]}. Please disactivate the publication (remove a colon), create page, and activate again`
+        `Cannot publish non-existant page ${linkTitle[1]}. Please deactivate the publication (remove a colon), create page, and activate again`
       );
       return;
     }
   }
   const wcRaw = getBlockWithChildren(uid, false);
-  const wc = wcRaw && wcRaw[0] && wcRaw[0].children ? wcRaw[0].children : [];
+  const wc = isBlockRef
+    ? wcRaw
+    : wcRaw && wcRaw[0] && wcRaw[0].children
+    ? wcRaw[0].children
+    : [];
   const blockWC = barrayToBMap(btreeToBArray(wc));
 
   const qualifiedTitle = linkTitle
@@ -113,10 +137,12 @@ const createPub = ([title, rawUid]) => {
   doc.subscribe();
   doc.once("load", () => {
     if (!doc.type) {
-      doc.create({ tree: blockWC || {} });
+      doc.create({
+        tree: blockWC || {},
+      });
     }
     const callback = throttle((_, after) => updatePub(title, doc, after), 5000);
-    window.inter.pubs[title] = { doc, uid, title, callback };
+    window.inter.pubs[title] = { doc, uid, title, callback, isBlockRef };
     updatePub(title, doc, _, blockWC);
     console.log({ wcRaw, wc, blockWC });
 
@@ -139,15 +165,14 @@ const updateSub = (title, doc, uid) => {
 
   const timeout = window.inter.subs[title].timeout;
   if (timeout) {
-    console.log("Clearing timeout", timeout);
     clearTimeout(timeout);
   }
 
   const newData = doc.data.tree;
+
   const wcRaw = getBlockWithChildren(uid, false);
   const wc = wcRaw && wcRaw[0] && wcRaw[0].children ? wcRaw[0].children : [];
   const data = barrayToBMap(btreeToBArray(wc));
-  console.log({ data, newData });
   const newBlocks = Object.keys(newData)
     .filter((x) => !data[x])
     .map((x) => newData[x]);
@@ -173,6 +198,36 @@ const updateSub = (title, doc, uid) => {
     moveBlocks,
   });
 
+  // check external refs
+  const blocks = Object.keys(newData);
+  const hasBlockRefs = newBlocks.concat(updateString).reduce((acc, x) => {
+    const blockrefs = x.string.match(blockRegexp);
+    if (blockrefs) {
+      console.log({ blockrefs });
+      blockrefs
+        .map((x) => x.slice(2, -2))
+        .forEach((bref) => {
+          if (!acc[bref]) {
+            acc[bref] = [];
+          }
+          acc[bref].push(x);
+        });
+    }
+    return acc;
+  }, {});
+
+  const externalRefs = Object.keys(hasBlockRefs).filter(
+    (x) => !blocks.find((z) => z.uid === x)
+  );
+
+  const externalDb = title.split("/")[0].replace("[[", "");
+  externalRefs.forEach((ex) => {
+    const subName = `${externalDb}/${ex}`;
+    if (!window.inter.subs[subName]) {
+      createSub([subName, ex, true, hasBlockRefs[ex]]);
+    }
+  });
+
   // set timeout here in case we crash
   if (
     sum(
@@ -185,7 +240,6 @@ const updateSub = (title, doc, uid) => {
       () => updateSub(title, doc, uid),
       65 * 1000
     );
-    console.log("Setting timeout", inter.subs[title].timeout);
   }
 
   let orderedNewBlocks = [];
@@ -198,7 +252,6 @@ const updateSub = (title, doc, uid) => {
       block.hasBeenOrdered = true;
     }
   });
-  console.log("first ordered", orderedNewBlocks);
 
   // if there are blocks remaining, let's deal with them recursively
   let i = 0;
@@ -278,11 +331,20 @@ const updateSub = (title, doc, uid) => {
   });
 };
 
-const createSub = ([title, uid]) => {
+const createSub = ([title, rawUid, isBlockRef, blockRefCallbacks]) => {
+  let uid = rawUid;
   console.log("Creating sub ", title);
   if (title.split("/")[0] === window.inter.dbname) {
     window.alert("Cannot subscribe to publications from your own database");
     return;
+  }
+
+  if (isBlockRef) {
+    uid = roamAlphaAPI.util.generateUID();
+    window.roamAlphaAPI.createBlock({
+      location: { "parent-uid": window.inter.depot, order: 0 },
+      block: { string: title, uid },
+    });
   }
 
   const linkTitle = title.trim().match(/^\[\[(.+)\]\]$/);
@@ -295,8 +357,9 @@ const createSub = ([title, uid]) => {
       uid = block[":block/uid"];
     } catch (e) {
       console.log("Creating new page ", linkTitle[1]);
+      uid = roamAlphaAPI.util.generateUID();
+      roamAlphaAPI.createPage({ page: { title: linkTitle[1], uid } });
     }
-    roamAlphaAPI.createPage({ page: { title: linkTitle[1] } });
   }
 
   const doc = window.inter.connection.get("inter", title);
@@ -307,8 +370,18 @@ const createSub = ([title, uid]) => {
       "op",
       throttle(() => updateSub(title, doc, uid), 5000)
     );
+
+    if (blockRefCallbacks) {
+      window.setTimeout(() => {
+        blockRefCallbacks.forEach((bref) => {
+          roamAlphaAPI.updateBlock({
+            block: { uid: bref.uid, string: bref.string + " " },
+          });
+        }, 500);
+      });
+    }
   });
-  window.inter.subs[title] = { doc, uid, title };
+  window.inter.subs[title] = { doc, uid, title, isBlockRef };
 };
 
 const updatedPubs = (after) => {
@@ -318,7 +391,7 @@ const updatedPubs = (after) => {
   );
   const pubIds = pubs.map((x) => x[0]);
   const removedPubs = Object.keys(window.inter.pubs).filter(
-    (x) => !pubIds.includes(x)
+    (x) => !pubIds.includes(x) && !window.inter.pubs[x].isBlockRef
   );
 
   console.log("Removed Pubs", removedPubs);
@@ -345,7 +418,7 @@ const updatedSubs = (after) => {
 
   const subIds = subs.map((x) => x[0]);
   const removedSubs = Object.keys(window.inter.subs).filter(
-    (x) => !subIds.includes(x)
+    (x) => !subIds.includes(x) && !window.inter.subs[x].isBlockRef
   );
   console.log("Removed Subs", removedSubs);
   removedSubs.forEach((sub) => {
