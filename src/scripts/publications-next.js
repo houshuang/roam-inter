@@ -82,15 +82,34 @@ const updatePub = (title, doc, rawWc, rawNewData) => {
   ops.forEach((op) => doc.submitOp(op));
 };
 
-const createPub = ([title, uid]) => {
+const createPub = ([title, rawUid]) => {
   console.log("Creating pub ", title);
+  let uid = rawUid;
+  const linkTitle = title.trim().match(/^\[\[(.+)\]\]$/);
+  if (linkTitle) {
+    try {
+      const block = window.roamAlphaAPI.pull(
+        "[:block/uid]",
+        `[:node/title "${linkTitle[1]}"]`
+      );
+      uid = block[":block/uid"];
+    } catch (e) {
+      console.error(e);
+      window.alert(
+        `Cannot publish non-existant page ${linkTitle[1]}. Please disactivate the publication (remove a colon), create page, and activate again`
+      );
+      return;
+    }
+  }
   const wcRaw = getBlockWithChildren(uid, false);
   const wc = wcRaw && wcRaw[0] && wcRaw[0].children ? wcRaw[0].children : [];
   const blockWC = barrayToBMap(btreeToBArray(wc));
-  const doc = window.inter.connection.get(
-    "inter",
-    window.inter.dbname + "/" + title
-  );
+
+  const qualifiedTitle = linkTitle
+    ? `[[${window.inter.dbname}/${linkTitle[1]}]]`
+    : window.inter.dbname + "/" + title;
+
+  const doc = window.inter.connection.get("inter", qualifiedTitle);
   doc.subscribe();
   doc.once("load", () => {
     if (!doc.type) {
@@ -264,6 +283,20 @@ const createSub = ([title, uid]) => {
   if (title.split("/")[0] === window.inter.dbname) {
     window.alert("Cannot subscribe to publications from your own database");
     return;
+  }
+
+  const linkTitle = title.trim().match(/^\[\[(.+)\]\]$/);
+  if (linkTitle) {
+    try {
+      const block = window.roamAlphaAPI.pull(
+        "[:block/uid]",
+        `[:node/title "${linkTitle[1]}"]`
+      );
+      uid = block[":block/uid"];
+    } catch (e) {
+      console.log("Creating new page ", linkTitle[1]);
+    }
+    roamAlphaAPI.createPage({ page: { title: linkTitle[1] } });
   }
 
   const doc = window.inter.connection.get("inter", title);
